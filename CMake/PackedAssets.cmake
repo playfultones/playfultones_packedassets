@@ -178,7 +178,11 @@ function(playfultones_packedassets_add_pack)
     # header ahead of every TU instead: it defines PT_PACKEDASSETS_KEY, and
     # the committed header's #ifndef guard then skips its {0} default.
     if(MSVC)
-        target_compile_options(${PA_TARGET} BEFORE PRIVATE /FI"${_gen}/GeneratedKey.h")
+        # SHELL: keeps "/FI<path>" as one fragment and consumes the quotes for
+        # grouping (so a space in the path still works) instead of letting them
+        # leak into the filename. Plain /FI"${path}" breaks under Ninja/ccache,
+        # which escape the quotes so MSVC opens a file literally named "...".
+        target_compile_options(${PA_TARGET} BEFORE PRIVATE "SHELL:/FI\"${_gen}/GeneratedKey.h\"")
     else()
         target_compile_options(${PA_TARGET} BEFORE PRIVATE -include "${_gen}/GeneratedKey.h")
     endif()
