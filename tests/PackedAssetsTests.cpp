@@ -20,6 +20,47 @@ TEST_CASE("crc32 known vector") {
 }
 
 #include "src/Crypto.h"
+extern "C" {
+#include "third_party/tiny-aes/aes.h"
+}
+#include <vector>
+#include <cstdint>
+
+// The platform aesCtrXcrypt (CommonCrypto / AES-NI on Apple) MUST be
+// byte-identical to the portable tiny-aes software path, or .pak files stop
+// being interchangeable across platforms. On non-Apple both paths ARE tiny-aes,
+// so this is a tautology there; on Apple it is the real cross-impl guard.
+TEST_CASE("aesCtrXcrypt is byte-identical to the tiny-aes reference") {
+    Key key{};
+    for (int i = 0; i < 32; ++i) key[i] = uint8_t(i * 7 + 1);
+    const uint64_t entryIndex = 0x0102030405060708ull;
+
+    std::vector<uint8_t> plain(10000);
+    for (size_t i = 0; i < plain.size(); ++i) plain[i] = uint8_t(i * 131 + 7);
+
+    // Platform implementation (CommonCrypto on Apple).
+    auto viaPlatform = plain;
+    aesCtrXcrypt(key, entryIndex, viaPlatform);
+
+    // tiny-aes reference, using the same IV derivation as Crypto.cpp.
+    auto viaTinyAes = plain;
+    {
+        uint8_t iv[16] = {0};
+        for (int i = 0; i < 8; ++i) iv[i] = uint8_t(entryIndex >> (8 * i));
+        AES_ctx ctx;
+        AES_init_ctx_iv(&ctx, key.data(), iv);
+        AES_CTR_xcrypt_buffer(&ctx, viaTinyAes.data(), unsigned(viaTinyAes.size()));
+    }
+
+    REQUIRE(viaPlatform == viaTinyAes); // cross-implementation equivalence
+    REQUIRE(viaPlatform != plain);      // sanity: it actually transformed the data
+
+    // CTR is symmetric: applying the same call again restores the plaintext.
+    aesCtrXcrypt(key, entryIndex, viaPlatform);
+    REQUIRE(viaPlatform == plain);
+}
+
+#include "src/Crypto.h"
 
 TEST_CASE("aes-ctr round-trips and is keyed") {
     pt::packedassets::Key key{}; for (int i=0;i<32;++i) key[i]=uint8_t(i);
