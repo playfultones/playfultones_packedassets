@@ -44,7 +44,11 @@ std::shared_ptr<PackedAssetSource> createDefaultSource(){
         HMODULE mod = nullptr;
         GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            (LPCWSTR)&createDefaultSource, &mod);
-        HRSRC h = FindResourceW(mod, L"PACKEDASSETS", RT_RCDATA);
+        // RT_RCDATA expands to MAKEINTRESOURCE(10); without UNICODE defined in
+        // this TU that's the ANSI MAKEINTRESOURCEA (LPSTR), which won't bind to
+        // FindResourceW's LPCWSTR. The value is just the integer 10 packed into
+        // the pointer, so cast it to LPCWSTR (there is no RT_RCDATAW).
+        HRSRC h = FindResourceW(mod, L"PACKEDASSETS", (LPCWSTR) RT_RCDATA);
         if (h == nullptr) return std::shared_ptr<PackedAssetSource>(nullptr);
         HGLOBAL g = LoadResource(mod, h);
         auto* p = static_cast<const uint8_t*>(LockResource(g));
