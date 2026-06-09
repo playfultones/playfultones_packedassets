@@ -1,0 +1,2 @@
+#pragma once
+#define PT_PACKEDASSETS_KEY { @PT_KEY_BYTES@ }
