@@ -228,3 +228,32 @@ TEST_CASE("loader rejects overflowing TOC offsets without OOB") {
     REQUIRE_FALSE(src.isValid());                  // must reject, not admit via overflow
     REQUIRE_FALSE(src.getBytes("x").has_value());  // and must never OOB-read
 }
+
+TEST_CASE("CRC verification is opt-in; default skips it") {
+    pt::packedassets::Key key{}; key[0] = 3;
+    std::vector<pt::packedassets::InputEntry> in { { "a.bin", std::vector<uint8_t>(64, 0xAB) } };
+    auto pak = pt::packedassets::pack(in, key);
+
+    // Corrupt a byte in the data section (the pak ends with the entry's data).
+    pak.back() ^= 0xFF;
+
+    // Default (verifyCrc=false): corruption is NOT detected -- bytes come back.
+    pt::packedassets::PackedAssetSource lax(pak, key);
+    REQUIRE(lax.getBytes("a.bin").has_value());
+
+    // Opt-in (verifyCrc=true): the CRC mismatch is caught.
+    pt::packedassets::PackedAssetSource strict(pak, key, /*verifyCrc=*/true);
+    REQUIRE_FALSE(strict.getBytes("a.bin").has_value());
+}
+
+TEST_CASE("getBytes is deterministic across repeated reads") {
+    pt::packedassets::Key key{}; key[0] = 9;
+    std::vector<pt::packedassets::InputEntry> in { { "x.bin", { 1, 2, 3, 4, 5 } } };
+    auto pak = pt::packedassets::pack(in, key);
+    pt::packedassets::PackedAssetSource src(pak, key);
+
+    const auto a = src.getBytes("x.bin");
+    const auto b = src.getBytes("x.bin");
+    REQUIRE(a.has_value());
+    REQUIRE(b == a); // fresh decrypt each call, same result (safe for concurrent reads)
+}

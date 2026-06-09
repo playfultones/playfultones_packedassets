@@ -5,7 +5,7 @@ namespace pt::packedassets {
 using namespace fmt;
 static constexpr uint64_t kLoaderTocIv = 0xFFFFFFFFFFFFFFFFull;
 
-PackedAssetSource::PackedAssetSource(std::span<const uint8_t> p, const Key& k) : pak(p), key(k) {
+PackedAssetSource::PackedAssetSource(std::span<const uint8_t> p, const Key& k, bool vc) : pak(p), key(k), verifyCrc(vc) {
     if (pak.size() < kHeaderSize) return;
     if (std::memcmp(pak.data(), kMagic, 4) != 0) return;
     size_t o = 4;
@@ -47,7 +47,9 @@ std::optional<std::vector<uint8_t>> PackedAssetSource::getBytes(std::string_view
     std::vector<uint8_t> out(pak.begin()+dataSectionStart+e.dataOffset,
                              pak.begin()+dataSectionStart+e.dataOffset+e.storedSize);
     aesCtrXcrypt(key, e.index, out);
-    if (crc32(out.data(), out.size()) != e.crc) return std::nullopt;
+    // CRC is opt-in (see header): skipped by default to avoid redundant work on
+    // the boot path. A wrong key still surfaces as undecodable bytes downstream.
+    if (verifyCrc && crc32(out.data(), out.size()) != e.crc) return std::nullopt;
     return out;
 }
 
