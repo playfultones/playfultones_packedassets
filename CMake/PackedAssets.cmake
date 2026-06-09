@@ -137,7 +137,8 @@ endfunction()
 # Optional: PAK_NAME (default: assets.pak)
 #           RESOURCE_NAME (default: PACKEDASSETS)
 #           SCAN (ALWAYS|CONFIGURE, default: ALWAYS)
-#           FORMATS (list of JUCE format suffixes, e.g. "Standalone;VST3;AU")
+#           FORMATS (JUCE format suffixes, e.g. "Standalone;VST3;AU"; default:
+#                    all known formats, with non-existent sub-targets skipped)
 #
 # NOTE: TARGET must be the target that COMPILES the module sources. JUCE
 #       modules are INTERFACE libraries compiled into the consuming target, and
@@ -155,6 +156,13 @@ function(playfultones_packedassets_add_pack)
     endif()
     if(NOT PA_SCAN)
         set(PA_SCAN ALWAYS)
+    endif()
+    if(NOT PA_FORMATS)
+        # Default to every JUCE plugin format. _pt_pa_embed_macos skips any
+        # ${TARGET}_${fmt} sub-target that doesn't exist for this plugin (and
+        # falls back to embedding into the target itself for a plain app/bundle
+        # target), so this auto-fits whatever formats the plugin actually builds.
+        set(PA_FORMATS Standalone VST3 AU AUv3 AAX Unity VST LV2)
     endif()
 
     _pt_pa_ensure_packer()
