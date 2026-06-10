@@ -69,7 +69,7 @@ namespace {
             while (ok && off < data.size())
             {
                 const size_t remaining = data.size() - off;
-                const size_t nBlocks = std::min (kBlocks, (remaining + 15) / 16);
+                const size_t nBlocks = (std::min) (kBlocks, (remaining + 15) / 16);
 
                 // Fill the keystream buffer with successive counter blocks; the
                 // counter increments big-endian (from the last byte) to match
@@ -89,7 +89,7 @@ namespace {
 
                 if (ok)
                 {
-                    const size_t n = std::min (remaining, nBlocks * 16);
+                    const size_t n = (std::min) (remaining, nBlocks * 16);
                     for (size_t i = 0; i < n; ++i)
                         data[off + i] ^= ks[i];
                     off += n;
