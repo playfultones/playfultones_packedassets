@@ -124,16 +124,35 @@ endfunction()
 # ---------------------------------------------------------------------------
 # _pt_pa_embed_windows: add a generated .rc file with RCDATA to the target.
 # ---------------------------------------------------------------------------
-function(_pt_pa_embed_windows TARGET PAK RESOURCE_NAME)
+function(_pt_pa_embed_windows TARGET PAK RESOURCE_NAME FORMATS)
     set(PT_RESOURCE_NAME ${RESOURCE_NAME})
     file(TO_NATIVE_PATH "${PAK}" PT_PAK_PATH)
     string(REPLACE "\\" "\\\\" PT_PAK_PATH "${PT_PAK_PATH}")
     set(_rc ${CMAKE_BINARY_DIR}/playfultones_packedassets_gen/PackedAssets.rc)
     configure_file(${PT_PACKEDASSETS_DIR}/windows/PackedAssetsResource.rc.in ${_rc} @ONLY)
-    set_source_files_properties(${_rc} PROPERTIES GENERATED TRUE
-        OBJECT_DEPENDS ${PAK})
-    target_sources(${TARGET} PRIVATE ${_rc})
-    add_dependencies(${TARGET} ${TARGET}_pack)
+    set_source_files_properties(${_rc} PROPERTIES GENERATED TRUE OBJECT_DEPENDS ${PAK})
+
+    # The .rc must compile into each FORMAT binary (the actual .exe/.dll), not the
+    # shared-code static lib -- MSVC drops resources from a static lib when linking
+    # the final binary, so the RCDATA would never reach the plugin otherwise. This
+    # mirrors _pt_pa_embed_macos targeting ${TARGET}_${fmt}.
+    set(_embedded_any FALSE)
+    foreach(fmt ${FORMATS})
+        set(_t ${TARGET}_${fmt})
+        if(NOT TARGET ${_t})
+            continue()
+        endif()
+        target_sources(${_t} PRIVATE ${_rc})
+        add_dependencies(${_t} ${TARGET}_pack)
+        set(_embedded_any TRUE)
+    endforeach()
+
+    if(NOT _embedded_any)
+        # No plugin-format sub-targets (e.g. a plain juce_add_gui_app): the target
+        # itself is the executable.
+        target_sources(${TARGET} PRIVATE ${_rc})
+        add_dependencies(${TARGET} ${TARGET}_pack)
+    endif()
 endfunction()
 
 # ---------------------------------------------------------------------------
@@ -224,7 +243,7 @@ function(playfultones_packedassets_add_pack)
     if(APPLE)
         _pt_pa_embed_macos(${PA_TARGET} ${_pak} "${PA_FORMATS}")
     elseif(WIN32)
-        _pt_pa_embed_windows(${PA_TARGET} ${_pak} ${PA_RESOURCE_NAME})
+        _pt_pa_embed_windows(${PA_TARGET} ${_pak} ${PA_RESOURCE_NAME} "${PA_FORMATS}")
     endif()
 endfunction()
 
