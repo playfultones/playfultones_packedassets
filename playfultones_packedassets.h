@@ -7,6 +7,8 @@ description:      Encrypted single-copy asset packaging for JUCE plugins.
 website:          https://playfultones.com
 license:          MIT
 dependencies:     juce_core, juce_graphics, juce_audio_formats, juce_gui_basics
+windowsLibs:      bcrypt
+mingwLibs:        bcrypt
 END_JUCE_MODULE_DECLARATION
 */
 #pragma once
