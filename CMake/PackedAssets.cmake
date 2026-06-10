@@ -37,6 +37,12 @@ function(_pt_pa_ensure_packer)
         ${PT_PACKEDASSETS_DIR}/third_party/tiny-aes/aes.c)
     target_compile_features(pt_pak_packer PRIVATE cxx_std_20)
     target_include_directories(pt_pak_packer PRIVATE ${PT_PACKEDASSETS_DIR})
+    # The packer compiles Crypto.cpp directly (it is not a JUCE-module consumer,
+    # so the module's windowsLibs/bcrypt does not apply). It encrypts via CNG on
+    # Windows, so link bcrypt here too.
+    if(WIN32)
+        target_link_libraries(pt_pak_packer PRIVATE bcrypt)
+    endif()
     # The packer is a host build tool, not a shipped binary. It uses
     # std::filesystem::recursive_directory_iterator, which libc++ marks
     # unavailable below macOS 10.15. The project's global deployment target
