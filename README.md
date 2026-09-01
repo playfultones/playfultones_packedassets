@@ -63,6 +63,16 @@ playfultones_packedassets_add_pack(
 This builds `assets.pak` at build time, force-includes the key, and embeds the
 pak into each plugin format (macOS `Resources/`, Windows `RCDATA`).
 
+Two optional arguments cover deployments that ship the pak *outside* the binary:
+
+- `EMBED OFF` — build the pak (into `${CMAKE_BINARY_DIR}/<PAK_NAME>`) but skip
+  the bundle / RCDATA embed step, leaving an installer to place it (read it back
+  with `createSourceFromFile`).
+- `KEY_VISIBILITY INTERFACE` — force-include the key with INTERFACE visibility.
+  Needed when `TARGET` is an INTERFACE aggregator (e.g. a Pamplejuce
+  `SharedCode`): a PRIVATE force-include does not propagate off an INTERFACE lib,
+  so the key would never reach the concrete targets that compile the module.
+
 **Read at runtime** — one shared, memoized source, keyed by original filename:
 
 ```cpp
@@ -70,6 +80,19 @@ auto src = pt::packedassets::createDefaultSource();   // shared_ptr; nullptr if 
 if (auto bytes = src->getBytes ("Knob_0.png"))        // std::optional<std::vector<uint8_t>>
     auto img = juce::ImageFileFormat::loadFrom (bytes->data(), bytes->size());
 ```
+
+**Read a pak deployed outside the bundle** — e.g. one an installer dropped into
+`/Library/Application Support`. `createSourceFromFile` memory-maps the file and
+keeps the mapping alive for the source's lifetime, and defaults to the same
+compiled-in key, so only the path differs from `createDefaultSource`:
+
+```cpp
+auto src = pt::packedassets::createSourceFromFile (
+    juce::File ("/Library/Application Support/Acme/Plugin/assets.pak"));  // nullptr if absent
+```
+
+Pair this with `EMBED OFF` on `add_pack` (below) to build the pak without
+embedding it into the binary, leaving the installer to place it.
 
 For JUCE UIs, `bd_ui_loader`'s `PackedAssetImageLoader` (auto-detected via
 `__has_include`) drives a `UILoader` straight from the pak, with parallel

@@ -181,6 +181,40 @@ TEST_CASE("createSourceFromSpan builds a source") {
     REQUIRE(src->isValid());
 }
 
+#include <juce_core/juce_core.h>
+TEST_CASE("createSourceFromFile maps a pak on disk and reads it back") {
+    pt::packedassets::Key key{}; for (int i=0;i<32;++i) key[i]=uint8_t(i*11+3);
+    std::vector<pt::packedassets::InputEntry> in {
+        {"hello.txt", {'h','e','l','l','o'}}, {"raw.bin", {0,255,7,3}} };
+    auto pak = pt::packedassets::pack(in, key);
+
+    auto pakFile = juce::File::createTempFile(".pak");
+    REQUIRE(pakFile.replaceWithData(pak.data(), pak.size()));
+
+    auto src = pt::packedassets::createSourceFromFile(pakFile, key);
+    REQUIRE(src != nullptr);
+    REQUIRE(src->isValid());
+    auto a = src->getBytes("hello.txt");
+    REQUIRE(a.has_value());
+    REQUIRE(std::vector<uint8_t>(a->begin(), a->end()) == std::vector<uint8_t>{'h','e','l','l','o'});
+
+    // The mapping must outlive the returned source: reading still works after
+    // the local file object goes out of scope (createSourceFromFile owns the map).
+    auto b = src->getBytes("raw.bin");
+    REQUIRE(b.has_value());
+    REQUIRE(*b == std::vector<uint8_t>{0,255,7,3});
+
+    pakFile.deleteFile();
+}
+
+TEST_CASE("createSourceFromFile returns nullptr for a missing pak") {
+    auto missing = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                       .getChildFile("pa_definitely_missing_xyz.pak");
+    missing.deleteFile();
+    pt::packedassets::Key key{};
+    REQUIRE(pt::packedassets::createSourceFromFile(missing, key) == nullptr);
+}
+
 #include <fstream>
 #include <filesystem>
 TEST_CASE("packer collects from multiple roots") {

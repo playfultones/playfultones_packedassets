@@ -15,6 +15,20 @@ std::shared_ptr<PackedAssetSource> createSourceFromSpan(std::span<const uint8_t>
     return std::make_shared<PackedAssetSource>(pak, key);
 }
 
+std::shared_ptr<PackedAssetSource> createSourceFromFile(const juce::File& pakFile, const Key& key){
+    if (! pakFile.existsAsFile())
+        return nullptr;
+    auto mapped = std::make_shared<juce::MemoryMappedFile>(pakFile, juce::MemoryMappedFile::readOnly);
+    if (mapped->getData() == nullptr || mapped->getSize() == 0)
+        return nullptr;
+    std::span<const uint8_t> span(static_cast<const uint8_t*>(mapped->getData()), (size_t) mapped->getSize());
+    // The source keeps a non-owning span over the mapped bytes, so the mapping
+    // must outlive it. Hand ownership of `mapped` to the shared_ptr's deleter:
+    // the mmap is released only after the source is destroyed.
+    auto* src = new PackedAssetSource(span, key);
+    return std::shared_ptr<PackedAssetSource>(src, [mapped](PackedAssetSource* p){ delete p; });
+}
+
 #if JUCE_MAC
 static juce::File pt_source_ownBundleResourcesPak(){
     Dl_info info{};
