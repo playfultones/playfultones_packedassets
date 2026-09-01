@@ -164,15 +164,25 @@ endfunction()
 #           SCAN (ALWAYS|CONFIGURE, default: ALWAYS)
 #           FORMATS (JUCE format suffixes, e.g. "Standalone;VST3;AU"; default:
 #                    all known formats, with non-existent sub-targets skipped)
+#           EMBED (ON|OFF, default: ON) -- when OFF, build the pak but do NOT
+#                    embed it into the bundle / RCDATA. Use for deployments that
+#                    ship the pak outside the binary (e.g. an installer dropping
+#                    it into /Library) and read it back with createSourceFromFile.
+#           KEY_VISIBILITY (PRIVATE|PUBLIC|INTERFACE, default: PRIVATE) -- the
+#                    visibility of the key force-include. Use INTERFACE when
+#                    TARGET is an INTERFACE library (e.g. a Pamplejuce SharedCode)
+#                    so the key propagates to the concrete targets that actually
+#                    compile the module sources; PRIVATE does not propagate off an
+#                    INTERFACE lib.
 #
-# NOTE: TARGET must be the target that COMPILES the module sources. JUCE
-#       modules are INTERFACE libraries compiled into the consuming target, and
-#       the decryption key is force-included onto TARGET (PRIVATE), so it only
-#       reaches code compiled as part of TARGET. Use your SharedCode/plugin
+# NOTE: The decryption key is force-included onto TARGET with KEY_VISIBILITY, so
+#       it must reach every TU that compiles the module sources. For a target that
+#       compiles them directly, the PRIVATE default is right; for an INTERFACE
+#       aggregator, pass KEY_VISIBILITY INTERFACE. Use your SharedCode/plugin
 #       target (the one you link the module into), not a sibling.
 # ---------------------------------------------------------------------------
 function(playfultones_packedassets_add_pack)
-    cmake_parse_arguments(PA "" "TARGET;KEY;PAK_NAME;RESOURCE_NAME;SCAN" "FORMATS;ASSET_DIR" ${ARGN})
+    cmake_parse_arguments(PA "" "TARGET;KEY;PAK_NAME;RESOURCE_NAME;SCAN;EMBED;KEY_VISIBILITY" "FORMATS;ASSET_DIR" ${ARGN})
     if(NOT PA_PAK_NAME)
         set(PA_PAK_NAME assets.pak)
     endif()
@@ -181,6 +191,12 @@ function(playfultones_packedassets_add_pack)
     endif()
     if(NOT PA_SCAN)
         set(PA_SCAN ALWAYS)
+    endif()
+    if(NOT DEFINED PA_EMBED)
+        set(PA_EMBED ON)
+    endif()
+    if(NOT PA_KEY_VISIBILITY)
+        set(PA_KEY_VISIBILITY PRIVATE)
     endif()
     if(NOT PA_FORMATS)
         # Default to every JUCE plugin format. _pt_pa_embed_macos skips any
@@ -207,9 +223,9 @@ function(playfultones_packedassets_add_pack)
         # grouping (so a space in the path still works) instead of letting them
         # leak into the filename. Plain /FI"${path}" breaks under Ninja/ccache,
         # which escape the quotes so MSVC opens a file literally named "...".
-        target_compile_options(${PA_TARGET} BEFORE PRIVATE "SHELL:/FI\"${_gen}/GeneratedKey.h\"")
+        target_compile_options(${PA_TARGET} BEFORE ${PA_KEY_VISIBILITY} "SHELL:/FI\"${_gen}/GeneratedKey.h\"")
     else()
-        target_compile_options(${PA_TARGET} BEFORE PRIVATE -include "${_gen}/GeneratedKey.h")
+        target_compile_options(${PA_TARGET} BEFORE ${PA_KEY_VISIBILITY} -include "${_gen}/GeneratedKey.h")
     endif()
 
     # Build a repeated `--dir <d>` argument list, one per ASSET_DIR root.
@@ -240,10 +256,12 @@ function(playfultones_packedassets_add_pack)
         add_custom_target(${PA_TARGET}_pack ALL DEPENDS ${_pak})
     endif()
 
-    if(APPLE)
-        _pt_pa_embed_macos(${PA_TARGET} ${_pak} "${PA_FORMATS}")
-    elseif(WIN32)
-        _pt_pa_embed_windows(${PA_TARGET} ${_pak} ${PA_RESOURCE_NAME} "${PA_FORMATS}")
+    if(PA_EMBED)
+        if(APPLE)
+            _pt_pa_embed_macos(${PA_TARGET} ${_pak} "${PA_FORMATS}")
+        elseif(WIN32)
+            _pt_pa_embed_windows(${PA_TARGET} ${_pak} ${PA_RESOURCE_NAME} "${PA_FORMATS}")
+        endif()
     endif()
 endfunction()
 
