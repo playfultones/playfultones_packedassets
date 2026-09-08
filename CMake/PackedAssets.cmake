@@ -1,4 +1,5 @@
-# Defines: playfultones_packedassets_add_tests(), playfultones_packedassets_add_pack()
+# Defines: playfultones_packedassets_add_tests(), playfultones_packedassets_add_pack(),
+#          playfultones_packedassets_embed_into()
 set(PT_PACKEDASSETS_DIR "${CMAKE_CURRENT_LIST_DIR}/.." CACHE INTERNAL "")
 
 function(playfultones_packedassets_add_tests)
@@ -141,13 +142,18 @@ endfunction()
 # ---------------------------------------------------------------------------
 # _pt_pa_embed_windows: add a generated .rc file with RCDATA to the target.
 # ---------------------------------------------------------------------------
-function(_pt_pa_embed_windows TARGET PAK RESOURCE_NAME FORMATS)
+function(_pt_pa_windows_rc PAK RESOURCE_NAME OUT_RC)
     set(PT_RESOURCE_NAME ${RESOURCE_NAME})
     file(TO_NATIVE_PATH "${PAK}" PT_PAK_PATH)
     string(REPLACE "\\" "\\\\" PT_PAK_PATH "${PT_PAK_PATH}")
     set(_rc ${CMAKE_BINARY_DIR}/playfultones_packedassets_gen/PackedAssets.rc)
     configure_file(${PT_PACKEDASSETS_DIR}/windows/PackedAssetsResource.rc.in ${_rc} @ONLY)
     set_source_files_properties(${_rc} PROPERTIES GENERATED TRUE OBJECT_DEPENDS ${PAK})
+    set(${OUT_RC} ${_rc} PARENT_SCOPE)
+endfunction()
+
+function(_pt_pa_embed_windows TARGET PAK RESOURCE_NAME FORMATS)
+    _pt_pa_windows_rc(${PAK} ${RESOURCE_NAME} _rc)
 
     # The .rc must compile into each FORMAT binary (the actual .exe/.dll), not the
     # shared-code static lib -- MSVC drops resources from a static lib when linking
@@ -273,6 +279,10 @@ function(playfultones_packedassets_add_pack)
         add_custom_target(${PA_TARGET}_pack ALL DEPENDS ${_pak})
     endif()
 
+    # embed_into reads these back, so it needs no repeat of the arguments.
+    set_target_properties(${PA_TARGET}_pack PROPERTIES
+        PT_PA_PAK "${_pak}" PT_PA_RESOURCE_NAME "${PA_RESOURCE_NAME}")
+
     if(PA_EMBED)
         if(APPLE)
             _pt_pa_embed_macos(${PA_TARGET} ${_pak} "${PA_FORMATS}")
@@ -280,6 +290,44 @@ function(playfultones_packedassets_add_pack)
             _pt_pa_embed_windows(${PA_TARGET} ${_pak} ${PA_RESOURCE_NAME} "${PA_FORMATS}")
         endif()
     endif()
+endfunction()
+
+# ---------------------------------------------------------------------------
+# playfultones_packedassets_embed_into: give plain executables built from the
+# same tree (tests, offline renderers, benchmarks) the pak the plugin bundles
+# get, so createDefaultSource() finds it there too. Windows compiles the
+# RCDATA into the executable; macOS and Linux place assets.pak beside it.
+#
+#   playfultones_packedassets_embed_into(TARGET <add_pack TARGET> TARGETS <exe>...)
+#
+# Call after playfultones_packedassets_add_pack(TARGET <same>) and after the
+# executables exist.
+# ---------------------------------------------------------------------------
+function(playfultones_packedassets_embed_into)
+    cmake_parse_arguments(PE "" "TARGET" "TARGETS" ${ARGN})
+    if(NOT PE_TARGET OR NOT PE_TARGETS)
+        message(FATAL_ERROR "playfultones_packedassets_embed_into: usage is embed_into(TARGET <add_pack TARGET> TARGETS <exe>...)")
+    endif()
+    if(NOT TARGET ${PE_TARGET}_pack)
+        message(FATAL_ERROR "playfultones_packedassets_embed_into: no pack for '${PE_TARGET}'; call playfultones_packedassets_add_pack(TARGET ${PE_TARGET}) first")
+    endif()
+    get_target_property(_pak ${PE_TARGET}_pack PT_PA_PAK)
+    get_target_property(_res ${PE_TARGET}_pack PT_PA_RESOURCE_NAME)
+    foreach(_t ${PE_TARGETS})
+        if(NOT TARGET ${_t})
+            message(FATAL_ERROR "playfultones_packedassets_embed_into: '${_t}' is not a target")
+        endif()
+        if(WIN32)
+            _pt_pa_windows_rc(${_pak} ${_res} _rc)
+            target_sources(${_t} PRIVATE ${_rc})
+        else()
+            add_custom_command(TARGET ${_t} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        ${_pak} "$<TARGET_FILE_DIR:${_t}>/assets.pak"
+                COMMENT "Placing assets.pak beside ${_t}")
+        endif()
+        add_dependencies(${_t} ${PE_TARGET}_pack)
+    endforeach()
 endfunction()
 
 # ---------------------------------------------------------------------------

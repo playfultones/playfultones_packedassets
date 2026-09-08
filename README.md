@@ -63,6 +63,19 @@ playfultones_packedassets_add_pack(
 This builds `assets.pak` at build time, force-includes the key, and embeds the
 pak into each plugin format (macOS `Resources/`, Windows `RCDATA`).
 
+Executables built from the same tree that are not plugin formats (unit tests,
+an offline editor renderer, a benchmark) get the pak with a second call, once
+those targets exist:
+
+```cmake
+playfultones_packedassets_embed_into(TARGET MyPlugin
+  TARGETS MyPlugin_tests MyPlugin_media)
+```
+
+Windows compiles the `RCDATA` into each executable; macOS and Linux place
+`assets.pak` beside it, where `createDefaultSource` looks after the bundle
+`Resources/` location.
+
 Two optional arguments cover deployments that ship the pak *outside* the binary:
 
 - `EMBED OFF` — build the pak (into `${CMAKE_BINARY_DIR}/<PAK_NAME>`) but skip
