@@ -221,12 +221,21 @@ TEST_CASE("createSourceFromFile returns nullptr for a missing pak") {
 // does.
 #if ! JUCE_WINDOWS
 TEST_CASE("createDefaultSource finds a pak beside a plain executable") {
+    auto pakFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+                       .getSiblingFile("assets.pak");
+
+    // embed_into places a real pak at this same path when the test binary shares
+    // its output directory with an executable that gets one. Never overwrite or
+    // delete it: the lookup is still exercised, just against that pak (whose key
+    // may not be this binary's, so only presence is checked).
+    if (pakFile.existsAsFile()) {
+        REQUIRE(pt::packedassets::createDefaultSource() != nullptr);
+        return;
+    }
+
     std::vector<pt::packedassets::InputEntry> in {
         {"beside.txt", {'o','k'}}, {"blob.bin", {9,8,7}} };
     auto pak = pt::packedassets::pack(in, pt::packedassets::compiledInKey());
-
-    auto pakFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
-                       .getSiblingFile("assets.pak");
     REQUIRE(pakFile.replaceWithData(pak.data(), pak.size()));
 
     auto src = pt::packedassets::createDefaultSource();
