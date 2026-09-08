@@ -215,6 +215,32 @@ TEST_CASE("createSourceFromFile returns nullptr for a missing pak") {
     REQUIRE(pt::packedassets::createSourceFromFile(missing, key) == nullptr);
 }
 
+// Windows reads the RCDATA compiled into the binary instead, and this test
+// binary carries none. createDefaultSource() is memoized per process, so this
+// is the one test that may call it, and it has to run before anything else
+// does.
+#if ! JUCE_WINDOWS
+TEST_CASE("createDefaultSource finds a pak beside a plain executable") {
+    std::vector<pt::packedassets::InputEntry> in {
+        {"beside.txt", {'o','k'}}, {"blob.bin", {9,8,7}} };
+    auto pak = pt::packedassets::pack(in, pt::packedassets::compiledInKey());
+
+    auto pakFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+                       .getSiblingFile("assets.pak");
+    REQUIRE(pakFile.replaceWithData(pak.data(), pak.size()));
+
+    auto src = pt::packedassets::createDefaultSource();
+    pakFile.deleteFile();   // the mapping, not the directory entry, backs the source
+
+    REQUIRE(src != nullptr);
+    REQUIRE(src->isValid());
+    auto a = src->getBytes("beside.txt");
+    REQUIRE(a.has_value());
+    REQUIRE(*a == std::vector<uint8_t>{'o','k'});
+    REQUIRE(src->getBytes("blob.bin") == std::vector<uint8_t>{9,8,7});
+}
+#endif
+
 #include <fstream>
 #include <filesystem>
 TEST_CASE("packer collects from multiple roots") {
