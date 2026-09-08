@@ -30,24 +30,26 @@ std::shared_ptr<PackedAssetSource> createSourceFromFile(const juce::File& pakFil
 }
 
 #if JUCE_MAC
-static juce::File pt_source_ownBundleResourcesPak(){
+// The binary this code lives in: the plugin/app inside its bundle, or a plain
+// executable (a test or tool built from the same tree).
+static juce::File pt_source_ownBinary(){
     Dl_info info{};
-    if (dladdr((void*)&pt_source_ownBundleResourcesPak, &info) && info.dli_fname != nullptr){
-        juce::File bin(juce::CharPointer_UTF8(info.dli_fname));
-        // .../Contents/MacOS/Exe -> .../Contents/Resources/assets.pak
-        return bin.getParentDirectory().getSiblingFile("Resources").getChildFile("assets.pak");
-    }
+    if (dladdr((void*)&pt_source_ownBinary, &info) && info.dli_fname != nullptr)
+        return juce::File(juce::CharPointer_UTF8(info.dli_fname));
     return {};
 }
 std::shared_ptr<PackedAssetSource> createDefaultSource(){
     // Memoized: both UILoaders (main + FX) share one mapping; avoids mmapping the pak twice.
     static std::shared_ptr<PackedAssetSource> cached = [](){
-        static juce::MemoryMappedFile* mapped = nullptr;
-        auto pak = pt_source_ownBundleResourcesPak();
-        if (! pak.existsAsFile()) return std::shared_ptr<PackedAssetSource>(nullptr);
-        mapped = new juce::MemoryMappedFile(pak, juce::MemoryMappedFile::readOnly);
-        std::span<const uint8_t> span(static_cast<const uint8_t*>(mapped->getData()), mapped->getSize());
-        return std::make_shared<PackedAssetSource>(span, compiledInKey());
+        const auto bin = pt_source_ownBinary();
+        if (bin == juce::File()) return std::shared_ptr<PackedAssetSource>(nullptr);
+        // .../Contents/MacOS/Exe -> .../Contents/Resources/assets.pak, else a
+        // pak embed_into placed beside a plain executable.
+        for (const auto& pak : { bin.getParentDirectory().getSiblingFile("Resources").getChildFile("assets.pak"),
+                                 bin.getSiblingFile("assets.pak") })
+            if (auto src = createSourceFromFile(pak))
+                return src;
+        return std::shared_ptr<PackedAssetSource>(nullptr);
     }();
     return cached;
 }
@@ -74,8 +76,10 @@ std::shared_ptr<PackedAssetSource> createDefaultSource(){
 }
 #else
 std::shared_ptr<PackedAssetSource> createDefaultSource(){
-    // Memoized for parity with the platform definitions; no assets to locate here.
-    static std::shared_ptr<PackedAssetSource> cached = nullptr;
+    // Memoized for parity with the platform definitions. Only a pak placed
+    // beside the executable (embed_into) can be found here.
+    static std::shared_ptr<PackedAssetSource> cached = createSourceFromFile(
+        juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("assets.pak"));
     return cached;
 }
 #endif
