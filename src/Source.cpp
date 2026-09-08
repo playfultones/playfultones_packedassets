@@ -2,7 +2,7 @@
 #include "GeneratedKey.h"
 #include <juce_core/juce_core.h>
 
-#if JUCE_MAC
+#if JUCE_MAC || JUCE_LINUX
  #include <dlfcn.h>
 #elif JUCE_WINDOWS
  #include <windows.h>
@@ -29,9 +29,11 @@ std::shared_ptr<PackedAssetSource> createSourceFromFile(const juce::File& pakFil
     return std::shared_ptr<PackedAssetSource>(src, [mapped](PackedAssetSource* p){ delete p; });
 }
 
-#if JUCE_MAC
+#if JUCE_MAC || JUCE_LINUX
 // The binary this code lives in: the plugin/app inside its bundle, or a plain
-// executable (a test or tool built from the same tree).
+// executable (a test or tool built from the same tree). dladdr resolves the
+// module containing this function, so a plugin gets its own bundle rather than
+// the host's executable.
 static juce::File pt_source_ownBinary(){
     Dl_info info{};
     if (dladdr((void*)&pt_source_ownBinary, &info) && info.dli_fname != nullptr)
@@ -43,13 +45,15 @@ std::shared_ptr<PackedAssetSource> createDefaultSource(){
     static std::shared_ptr<PackedAssetSource> cached = [](){
         const auto bin = pt_source_ownBinary();
         if (bin == juce::File()) return std::shared_ptr<PackedAssetSource>(nullptr);
-        // .../Contents/MacOS/Exe -> .../Contents/Resources/assets.pak, else a
-        // pak embed_into placed beside a plain executable.
-        for (const auto& pak : { bin.getParentDirectory().getSiblingFile("Resources").getChildFile("assets.pak"),
-                                 bin.getSiblingFile("assets.pak") })
-            if (auto src = createSourceFromFile(pak))
+        // Inside a bundle (<X>.app/Contents/MacOS/Exe, <X>.vst3/Contents/<arch>/Exe)
+        // the pak is in the sibling Resources/. Only probe that for a bundle, so a
+        // stray ../Resources/assets.pak next to a plain executable cannot win.
+        const auto dir = bin.getParentDirectory();
+        if (dir.getParentDirectory().getFileName() == "Contents")
+            if (auto src = createSourceFromFile(dir.getSiblingFile("Resources").getChildFile("assets.pak")))
                 return src;
-        return std::shared_ptr<PackedAssetSource>(nullptr);
+        // A pak embed_into placed beside the binary.
+        return createSourceFromFile(bin.getSiblingFile("assets.pak"));
     }();
     return cached;
 }
@@ -76,10 +80,8 @@ std::shared_ptr<PackedAssetSource> createDefaultSource(){
 }
 #else
 std::shared_ptr<PackedAssetSource> createDefaultSource(){
-    // Memoized for parity with the platform definitions. Only a pak placed
-    // beside the executable (embed_into) can be found here.
-    static std::shared_ptr<PackedAssetSource> cached = createSourceFromFile(
-        juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("assets.pak"));
+    // Memoized for parity with the platform definitions; no assets to locate here.
+    static std::shared_ptr<PackedAssetSource> cached = nullptr;
     return cached;
 }
 #endif
